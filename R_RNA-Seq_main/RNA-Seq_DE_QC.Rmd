@@ -54,7 +54,7 @@ knitr::opts_chunk$set(
 
 #### Differential Gene Expression Approach Used: DESeq2
 
-#### Cutoffs To Establish Differenttially Regulated Genes: |Log2FC| > 0.5 & padj < 0.1
+#### Cutoffs To Establish Differentially Regulated Genes: |Log2FC| > 0.5 & padj < 0.1
 
 ## PCA Plots
 
