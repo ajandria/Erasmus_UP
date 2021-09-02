@@ -1,0 +1,2 @@
+
+ls -d "$PWD"/* | awk 'NR % 2 == 0' > ../samples_R2.in
