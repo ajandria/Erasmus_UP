@@ -23,7 +23,7 @@ featureCounts_matrix <-
   column_to_rownames(var = 'Geneid')
 
 # Trim the colnames if neeeded
-colnames(featureCounts_matrix) <- stringr::str_subset(colnames(featureCounts_matrix), '.fastq.gz_fastp.fastq.gzAligned.out.bam')
+colnames(featureCounts_matrix) <- stringr::str_remove(colnames(featureCounts_matrix), '.fastq.gz_fastp.fastq.gzAligned.out.bam')
 
 # Read meta or create the condition
 # Meta file has to have 'samples' and 'condition' columns
