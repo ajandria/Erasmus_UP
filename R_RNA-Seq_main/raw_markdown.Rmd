@@ -1,0 +1,1072 @@
+---
+title: "FULL UGLY MARKDOWN"
+author: "Adrian Janucik"
+date: "27/08/2021"
+output: html_document
+
+---
+
+```{r Setup, include=FALSE}
+knitr::opts_chunk$set(
+	echo = TRUE,
+	message = FALSE,
+	warning = FALSE
+)
+ # Enable code exectuion log globally
+knitr::opts_chunk$set(message = FALSE) # Disable log messages
+knitr::opts_chunk$set(warning = FALSE) # Disable warning logs
+```
+## Quality Control And Differentiall Gene Expression Results
+
+#### This Is A Report Of Quality Control Analyses Ran On The Normalized Raw Counts Using DESeq2.
+
+## PCA Plots
+
+```{r startup_and_2D_PCA_initialization, echo=FALSE, fig.height=6, fig.width=9.5}
+suppressPackageStartupMessages(library(BiocManager)) # Before deploying remember to add BiocManager to library sources
+options(repos = BiocManager::repositories())
+
+options(ggrepel.max.overlaps = Inf) # Allow for overlaps on plots
+
+# Dependencies ------------------------------------------------------------
+suppressPackageStartupMessages(library(tidyverse))
+suppressPackageStartupMessages(library(plotly))
+suppressPackageStartupMessages(library(ComplexHeatmap))
+suppressPackageStartupMessages(library(InteractiveComplexHeatmap))
+suppressPackageStartupMessages(library(dendextend))
+suppressPackageStartupMessages(library(heatmaply))
+suppressPackageStartupMessages(library(RColorBrewer))
+suppressPackageStartupMessages(library(hrbrthemes))
+suppressPackageStartupMessages(library(ggthemes))
+
+# Setup -------------------------------------------------------------------
+meta <- read_csv('sampleTable2.csv') # Read table with meta contents
+
+# Read in DESeq2 normalized count matrix (median of ratios)
+deseq_normalized_counts <-
+  read_csv('GTF_FIXED_deseq_featureCounts_normalised_counts.csv') %>%
+  column_to_rownames(var = 'id') %>%
+  select(-c(1))
+
+# Temporary solution | Double the matrix
+deseq_normalized_counts2 <- deseq_normalized_counts
+
+# Read in DE results
+dge <- read_csv('GTF_FIXED_deseq_featureCounts_dge.csv') %>%
+  select(-1)
+
+# PCA on DESeq2 normalized counts -----------------------------------------
+
+# Perform PCA focusing only on first three dimensions for 3D plot
+deseq_normalized_counts_pca <- deseq_normalized_counts %>%
+  t() %>%
+  prcomp(rank. = 3)
+
+# Perform PCA focusing only on first two dimensions for 2D plot
+deseq_normalized_counts_pca_2d <- deseq_normalized_counts %>%
+  t() %>%
+  prcomp(rank. = 2)
+
+# Temporary solution | Assign meta information to variables
+condition = meta$condition
+sample = meta$samples
+
+# Call summary on the PCA to acquire explained variance
+deseq_normalized_counts_pca_2d_summary <-
+  summary(deseq_normalized_counts_pca_2d)
+
+# Create label for PCA showing % of explained variance
+tot_explained_variance_ratio_2d <-
+  summary(deseq_normalized_counts_pca_2d)$importance[2, 1:2]
+tot_explained_variance_ratio_2d <-
+  100 * sum(tot_explained_variance_ratio_2d)
+
+```
+
+##### 2D PCA on DESeq2's Normalized Counts
+
+##### Total Explained Variance = `r tot_explained_variance_ratio_2d`%
+
+```{r plot_2D_PCA_&_create_3D_label, echo=F, fig.height=7, fig.width=9}
+library(ggplot2)
+pca2d_1 <- ggplot(data.frame(deseq_normalized_counts_pca_2d$x), aes(PC1, PC2, color = condition, label = sample)) +
+  geom_jitter(size = 3) +
+  theme_hc()
+
+pca2d_1 <- ggplotly(pca2d_1)
+pca2d_1 <- layout(pca2d_1, margin=list(t = 75))
+pca2d_1
+# Call summary on the PCA to acquire explained variance
+deseq_normalized_counts_pca_summary <- summary(deseq_normalized_counts_pca)
+
+# Create label for PCA showing % of explained variance
+tot_explained_variance_ratio <- summary(deseq_normalized_counts_pca)$importance[2,1:3]
+tot_explained_variance_ratio <- 100 * sum(tot_explained_variance_ratio)
+
+# Function calling PCA | for specifics check the link in the section above
+```
+##### 3D PCA on DESeq2's Normalized Counts
+
+##### Total Explained Variance = `r tot_explained_variance_ratio`%
+```{r fig1, echo = F, fig.height = 7, fig.width=9}
+  (fig1 <-
+    plot_ly(
+      data.frame(deseq_normalized_counts_pca$x),
+      text = ~rownames(deseq_normalized_counts_pca$x),
+      x = ~ PC1,
+      y = ~ PC2,
+      z = ~ PC3,
+      color = ~ meta$condition,
+      colors = c('#BF382A', '#0C4B8E')
+    ) %>%
+    add_markers() %>%
+    layout(scene = list(
+      xaxis = list(title = paste("PC1 -", round(deseq_normalized_counts_pca_summary$importance[2, 1], 3))),
+      yaxis = list(title = paste("PC2 -", round(deseq_normalized_counts_pca_summary$importance[2, 2], 3))),
+      zaxis = list(title = paste("PC3 -", round(deseq_normalized_counts_pca_summary$importance[2, 3], 3)))
+    )))
+
+# PCA on DESeq2 normalized counts - ONLY DEGs -----------------------------
+# https://plotly.com/r/3d-scatter-plots/
+
+# Filter DE results for DEGs
+degs <- dge %>% 
+  filter(padj < 0.1) %>% 
+  filter(log2FoldChange > 0.5 | log2FoldChange < -0.5)
+####
+deseq_normalized_counts <- deseq_normalized_counts[rownames(deseq_normalized_counts) %in% degs$id,]
+deseq_normalized_counts_pca_2d <- deseq_normalized_counts %>%
+  t() %>%
+  prcomp(rank. = 2)
+
+condition = meta$condition
+sample = meta$samples
+
+# Call summary on the PCA to acquire explained variance
+deseq_normalized_counts_pca_2d_summary <- summary(deseq_normalized_counts_pca_2d)
+
+# Create label for PCA showing % of explained variance
+tot_explained_variance_ratio_2d <- summary(deseq_normalized_counts_pca_2d)$importance[2,1:2]
+tot_explained_variance_ratio_2d <- 100 * sum(tot_explained_variance_ratio_2d)
+
+
+library(ggplot2)
+pca2d_2 <- ggplot(data.frame(deseq_normalized_counts_pca_2d$x), aes(PC1, PC2, color = condition, label = sample)) +
+  geom_jitter(size = 3) +
+  theme_hc()
+pca2d_2 <- ggplotly(pca2d_2)
+pca2d_2 <- layout(pca2d_2, margin=list(t = 75))
+```
+##### 2D PCA on DESeq2's Normalized Counts
+
+##### Total Explained Variance = `r tot_explained_variance_ratio_2d`% 
+```{r pca2d_2, echo = F, fig.height = 7, fig.width=9}
+pca2d_2
+
+####
+# Perform PCA focusing only on first three dimensions
+deseq_normalized_counts_pca_degs <- deseq_normalized_counts[rownames(deseq_normalized_counts) %in% degs$id,] %>%
+  t() %>%
+  prcomp(rank. = 3)
+
+# Call summary on the PCA to acquire explained variance
+deseq_normalized_counts_pca_degs_summary <- summary(deseq_normalized_counts_pca_degs)
+
+# Create label for PCA showing % of explained variance
+tot_explained_variance_ratio <- summary(deseq_normalized_counts_pca_degs)$importance[2,1:3]
+tot_explained_variance_ratio <- 100 * sum(tot_explained_variance_ratio)
+
+# Function calling PCA | for specifics check the link in the section above
+```
+##### 3D PCA on DESeq2's Normalized Counts
+
+##### Total Explained Variance = `r tot_explained_variance_ratio`%
+```{r fig2, echo = F, fig.height = 7, fig.width=9}
+  (fig2 <-
+    plot_ly(
+      data.frame(deseq_normalized_counts_pca_degs$x),
+      text = ~rownames(deseq_normalized_counts_pca_degs$x),
+      x = ~ PC1,
+      y = ~ PC2,
+      z = ~ PC3,
+      color = ~ meta$condition,
+      colors = c('#BF382A', '#0C4B8E')
+    ) %>%
+    add_markers() %>%
+    layout(scene = list(
+      xaxis = list(title = paste("PC1 -", round(deseq_normalized_counts_pca_degs_summary$importance[2, 1], 3))),
+      yaxis = list(title = paste("PC2 -", round(deseq_normalized_counts_pca_degs_summary$importance[2, 2], 3))),
+      zaxis = list(title = paste("PC3 -", round(deseq_normalized_counts_pca_degs_summary$importance[2, 3], 3)))
+    )))
+
+```
+
+## Dendrograms representing sample clustering
+
+##### Dendrogram on DESeq2's Normalized Counts
+
+```{r pressure, echo=FALSE, fig.height = 7, fig.width=9}
+# Dendrogram on DESeq2 normalized counts  ---------------------------------
+deseq_normalized_counts <- deseq_normalized_counts2
+# Specify factors and their levels
+meta$condition <-
+  factor(meta$condition, levels = c('NonAsthma', 'Asthma'))
+
+# Create distance matrix
+d_deseq_normalized_counts <- dist(t(deseq_normalized_counts))
+hc_deseq_normalized_counts <- hclust(d_deseq_normalized_counts, method = "complete")
+conditions <- rev(levels(meta$condition))
+
+dend <- as.dendrogram(hc_deseq_normalized_counts)
+
+# Color the branches based on the clusters:
+dend <- color_branches(dend, k = 2, col = c('#BF382A', '#0C4B8E'))#, groupLabels=conditions)
+
+# Manually match the labels, as much as possible, to the real classification of the flowers:
+labels_colors(dend) <-
+  c('#BF382A', '#0C4B8E')[sort_levels_values(as.numeric(meta$condition)[order.dendrogram(dend)])]
+
+# We shall add the flower type to the labels:
+labels(dend) <-
+  paste(as.character(meta$condition)[order.dendrogram(dend)],
+        "(", labels(dend), ")",
+        sep = "")
+
+# We hang the dendrogram a bit:
+dend <- hang.dendrogram(dend, hang_height = 0.1)
+
+# reduce the size of the labels:
+dend <- set(dend, "labels_cex", 0.6)
+
+# And plot:
+par(mar = c(2, 2, 2, 14) + 0.1, xpd = NA)
+plot(dend,
+     horiz =  TRUE,
+     nodePar = list(cex = .007))
+legend("topleft",
+       legend = conditions,
+       fill = c('#BF382A', '#0C4B8E'))
+
+meta$colorCondition <-
+  ifelse(as.character(meta$condition) == 'Asthma', '#BF382A', '#0C4B8E')
+colored_bars(
+  colors = meta$colorCondition,
+  dend = dend,
+  rowLabels = "",
+  add = TRUE,
+  horiz = TRUE
+)
+```
+
+#### Dendrogram on DESeq2 normalized counts with only DEGs
+
+```{r dendrogram, echo=FALSE, fig.height = 7, fig.width=9}
+# Dendrogram on DESeq2 normalized counts - ONLY DEGs ----------------------
+meta$condition <-
+  factor(meta$condition, levels = c('NonAsthma', 'Asthma'))
+
+deseq_normalized_counts_degs <- deseq_normalized_counts[rownames(deseq_normalized_counts) %in% degs$id,]
+
+d_deseq_normalized_counts_degs <- dist(t(deseq_normalized_counts_degs))
+hc_deseq_normalized_counts_degs <- hclust(d_deseq_normalized_counts_degs, method = "complete")
+conditions <- rev(levels(meta$condition))
+
+# Create dendrogram object
+dend_degs <- as.dendrogram(hc_deseq_normalized_counts_degs)
+
+# Color the branches based on the clusters:
+dend_degs <- color_branches(dend_degs, k = 2, col = c('#BF382A', '#0C4B8E'))#, groupLabels=conditions)
+
+# Manually match the labels, as much as possible, to the real classification of the flowers:
+labels_colors(dend_degs) <-
+  c('#BF382A', '#0C4B8E')[sort_levels_values(as.numeric(meta$condition)[order.dendrogram(dend_degs)])]
+
+# We shall add the flower type to the labels:
+labels(dend_degs) <-
+  paste(as.character(meta$condition)[order.dendrogram(dend_degs)],
+        "(", labels(dend_degs), ")",
+        sep = "")
+
+# We hang the dendrogram a bit:
+dend_degs <- hang.dendrogram(dend_degs, hang_height = 0.1)
+
+# reduce the size of the labels:
+dend_degs <- set(dend_degs, "labels_cex", 0.6)
+
+# And plot:
+par(mar = c(2, 2, 2, 14) + 0.1, xpd = NA)
+plot(dend_degs,
+     horiz =  TRUE,
+     nodePar = list(cex = .007))
+legend("topleft",
+       legend = conditions,
+       fill = c('#BF382A', '#0C4B8E'))
+meta$colorCondition <-
+  ifelse(as.character(meta$condition) == 'Asthma', '#BF382A', '#0C4B8E')
+colored_bars(
+  colors = meta$colorCondition,
+  dend = dend_degs,
+  rowLabels = "",
+  add = TRUE,
+  horiz = TRUE
+)
+
+```
+
+## Correlation between samples performed on Euclidean distance with the use of DE genes
+
+```{r heatmap, echo = FALSE, fig.height = 6, fig.width = 10}
+# Heatmap -----------------------------------------------------------------
+
+
+gradient_col <- ggplot2::scale_fill_gradient2(
+  low = "blue", high = "red", 
+  midpoint = 0, limits = c(-1, 1)
+)
+
+side_annot <- meta$condition %>% 
+  sort(decreasing = TRUE)
+
+side_annot_top <- meta$condition %>% 
+  sort(decreasing = FALSE)
+
+deseq_normalized_counts_distance <- deseq_normalized_counts_degs
+
+deseq_normalized_counts_dist_mat_cor <- dist(t(deseq_normalized_counts_distance),
+                                             diag = TRUE,
+                                             upper = TRUE) %>% 
+  as.matrix() %>% 
+  cor()
+
+colnames(deseq_normalized_counts_dist_mat_cor) <- paste(meta$condition, meta$samples, sep = "-")
+rownames(deseq_normalized_counts_dist_mat_cor) <- colnames(deseq_normalized_counts_dist_mat_cor)
+sorted_deseq_normalized_counts_dist_mat <- deseq_normalized_counts_dist_mat_cor[order(rownames(deseq_normalized_counts_dist_mat_cor)), order(colnames(deseq_normalized_counts_dist_mat_cor), decreasing = TRUE)]
+
+dit_cor_height = nrow(sorted_deseq_normalized_counts_dist_mat)*0.25
+```
+
+```{r heatmap_dit_cor_1, echo = F, fig.height=dit_cor_height, fig.width=10}
+heatmap_dit_cor <- heatmaply(
+  sorted_deseq_normalized_counts_dist_mat,
+  scale_fill_gradient_fun = gradient_col,
+  col_side_colors = data.frame("Condition" = side_annot_top),
+  row_side_colors = data.frame("Condition" = side_annot),
+  limits = c(-1,1),
+  Rowv = FALSE,
+  Colv = FALSE,
+  showticklabels = TRUE,
+  row_side_palette = colorRampPalette(c('#BF382A', '#0C4B8E'), bias=1),
+  col_side_palette = colorRampPalette(c('#BF382A', '#0C4B8E'), bias=1),
+  key.title = 'corr',
+  height = nrow(sorted_deseq_normalized_counts_dist_mat)*0.7)
+
+s <- subplot(heatmap_dit_cor, margin = .01, titleY = TRUE) %>% 
+  config(displayModeBar = F)
+s$x$data[[1]]$showlegend <- FALSE
+s$x$data[[11]]$showlegend <- FALSE
+s$x$layout$annotations[[2]]$text <- 'Condition'
+s$x$layout$annotations[[2]]$y <- 0.8
+s$x$layout$annotations[[2]]$x <- 1.026
+
+s
+
+
+```
+
+
+## Volcano Plots
+
+
+```{r vlocano, echo = FALSE, fig.height = 13, fig.width=18}
+# Volcano -----------------------------------------------------------------
+keyvals <-
+  ifelse(dge$id %in% c(""),
+         'red',
+         ifelse((
+           dge$log2FoldChange > 0.5 |
+             dge$log2FoldChange < -0.5
+         ) & dge$padj < 0.1,
+         'orange',
+         ifelse(dge$padj > 0.1, '#143D59', '#143D59')
+         ))
+
+keyvals[is.na(keyvals)] <- '#143D59'
+#names(keyvals)[keyvals == 'red'] <- 'Commonly Regulated'
+names(keyvals)[keyvals == '#143D59'] <-
+  'Not Statistically Significant'
+names(keyvals)[keyvals == 'orange'] <- 'Log2FC & padj'
+
+v1 <- EnhancedVolcano::EnhancedVolcano(
+  dge,
+  lab = dge$id,
+  x = 'log2FoldChange',
+  y = 'padj',
+  title = 'Asthma vs Non-Asthma',
+  pCutoff = 0.1,
+  FCcutoff = 0.5,
+  pointSize = 3.5,
+  labSize = 4.5,
+  colCustom = keyvals,
+  #col=c('#143D59', '#143D59', '#143D59', 'orange'),
+  labCol = 'black',
+  labFace = 'bold',
+  boxedLabels = T,
+  colAlpha = 3.5 / 5,
+  legendPosition = 'top',
+  legendLabSize = 18,
+  legendIconSize = 5.0,
+  drawConnectors = T,
+  widthConnectors = 1.5,
+  colConnectors = 'black',
+  gridlines.major = T,
+  gridlines.minor = FALSE,
+  border = 'full',
+  borderWidth = 1,
+  borderColour = 'black',
+  #xlim = c(-4,4),
+  #ylim = c(0,11)
+)
+
+v2 <- EnhancedVolcano::EnhancedVolcano(
+  dge,
+  lab = dge$id,
+  x = 'log2FoldChange',
+  y = 'padj',
+  title = 'Asthma vs Non-Asthma',
+  pCutoff = 0.1,
+  FCcutoff = 0.5,
+  pointSize = 3.5,
+  labSize = 4.5,
+  colCustom = keyvals,
+  #col=c('#143D59', '#143D59', '#143D59', 'orange'),
+  labCol = 'black',
+  labFace = 'bold',
+  boxedLabels = T,
+  colAlpha = 3.5 / 5,
+  legendPosition = 'top',
+  legendLabSize = 18,
+  legendIconSize = 5.0,
+  drawConnectors = T,
+  widthConnectors = 1.5,
+  colConnectors = 'black',
+  gridlines.major = T,
+  gridlines.minor = FALSE,
+  border = 'full',
+  borderWidth = 1,
+  borderColour = 'black',
+  #xlim = c(-4,4),
+  #ylim = c(0,11),
+  selectLab = c("")
+)
+
+library(gridExtra)
+
+grid.arrange(v1, v2, ncol=2)
+    
+```
+
+
+## Differentially Regulated Genes - Visualized Interactively
+
+
+```{r interactive, echo = F,fig.height = 6, fig.width = 10}
+
+# DEGs Heatmap ------------------------------------------------------------
+
+deseq_normalized_counts_degs_heatmap <- deseq_normalized_counts_degs %>%
+  as.matrix() %>% 
+  log2()
+
+deseq_normalized_counts_degs_heatmap[is.infinite(deseq_normalized_counts_degs_heatmap)] <- 0
+
+column_names <- colnames(deseq_normalized_counts_degs)
+
+deseq_normalized_counts_degs_heatmap <-
+  base::apply(deseq_normalized_counts_degs_heatmap, 1, scale) %>%
+  t() 
+
+colnames(deseq_normalized_counts_degs_heatmap) <- column_names
+
+deseq_normalized_counts_degs_heatmap[is.nan(deseq_normalized_counts_degs_heatmap)] <- 0
+
+colnames(deseq_normalized_counts_degs_heatmap) <- paste(meta$condition, meta$samples, sep = "-")
+
+deseq_normalized_counts_degs_heatmap <-
+  deseq_normalized_counts_degs_heatmap[order(rownames(deseq_normalized_counts_degs_heatmap)), order(colnames(deseq_normalized_counts_degs_heatmap))]
+
+gradient_col <- ggplot2::scale_fill_gradient2(
+  low = "blue", high = "red", 
+  midpoint = 0
+)
+
+side_annot_top <- as.character(meta$condition) %>% 
+  sort()
+
+dit_cor_height = nrow(deseq_normalized_counts_degs_heatmap)*0.3
+```
+
+```{r heatmap_dit_cor, echo = F, fig.height=dit_cor_height, fig.width=10}
+(heatmap_dit_cor <- heatmaply(
+  deseq_normalized_counts_degs_heatmap,
+  scale_fill_gradient_fun = gradient_col,
+  limits = c(-1.5, 1.5),
+  col_side_colors = data.frame("Condition" = side_annot_top),
+  Rowv = TRUE,
+  Colv = FALSE,
+  showticklabels = TRUE,
+  col_side_palette = colorRampPalette(c('#BF382A', '#0C4B8E'), bias=1),
+  key.title = 'z-score'))
+
+dit_cor_height2 = nrow(deseq_normalized_counts_degs_heatmap)*0.55
+```
+
+```{r heatmap_dit_cor2, echo=F, fig.height=dit_cor_height, fig.width=10}
+(heatmap_dit_cor <- heatmaply(
+  deseq_normalized_counts_degs_heatmap,
+  scale_fill_gradient_fun = gradient_col,
+  limits = c(-1.5, 1.5),
+  col_side_colors = data.frame("Condition" = side_annot_top),
+  Rowv = TRUE,
+  Colv = T,
+  showticklabels = TRUE,
+  col_side_palette = colorRampPalette(c('#BF382A', '#0C4B8E'), bias=1),
+  key.title = 'z-score'))
+
+
+#Set annotation | https://www.biostars.org/p/317349/
+ann <- data.frame(condition = meta$condition) %>%
+  arrange(desc(condition))
+colnames(ann) <- 'condition'
+colours <-
+  list('condition' = c('Asthma' = 'red2', 'NonAsthma' = 'royalblue'))
+colAnn_s <- ComplexHeatmap::HeatmapAnnotation(
+  df = ann,
+  which = 'col',
+  col = colours,
+  annotation_width = unit(c(1, 4), 'cm'),
+  gap = unit(1, 'mm')
+)
+
+```
+
+
+```{r interactive2, echo=F, fig.height = 6, fig.width = 10}
+# library(shiny)
+# 
+# col_fun2 = circlize::colorRamp2(c(-1.5, 0, 1.5),
+#                                 c('mediumblue', 'white', 'red2'), space = 'sRGB')
+# ht <-
+#   ComplexHeatmap::Heatmap(
+#     deseq_normalized_counts_degs_heatmap,
+#     name = 'z-score',
+#     col = col_fun2,
+#     cluster_rows = T,
+#     cluster_columns = F,
+#     show_row_names = T,
+#     border = F,
+#     show_column_names = TRUE,
+#     column_title = 'Samples sorted',
+#     row_dend_width = unit(1, 'cm'),
+#     heatmap_legend_param = list(legend_height = unit(6, "cm")),
+#     top_annotation = colAnn_s,
+#     column_names_gp = grid::gpar(fontsize = 7),
+#     row_names_gp = grid::gpar(fontsize = 7)
+#   )
+# 
+# # or use InteractiveComplexHeatmapWidget()
+# ui = fluidPage(
+#     actionButton("show_heatmap", "Generate_heatmap"),
+#     htmlOutput("heatmap_output")
+# )
+# 
+# server = function(input, output, session) {
+#     observeEvent(input$show_heatmap, {
+#         InteractiveComplexHeatmapWidget(input, output, session, draw(ht),
+#             output_id = "heatmap_output")
+#     })
+# }
+# shiny::shinyApp(ui, server, options = list(height = 650))
+# 
+
+```
+
+
+```{r GSEA, echo = F, fig.width=15, fig.height=10}
+
+## Top 30 most significant GO Terms - Visualized
+
+# GSEA --------------------------------------------------------------------
+#go_all_gsea_dge_out <- read.csv('exonic_GO_GSEA.csv')
+#kegg_gsea_dge_out <- read.csv('exonic_KEGG_GSEA.csv')
+#wiki_pathways_gsea <- read.csv('exonic_WIKIp_GSEA.csv')
+
+# library(ggpubr)
+# library(plotly)
+# 
+# (ggdc <- ggdotchart(
+#   data.frame(go_all_gsea_dge_out)[1:30,],
+#   x = 'Description',
+#   y = "NES",
+#   xlab = c(),
+#   color = "ONTOLOGY",
+#   # Color by groups
+#   palette = c("#00AFBB", "#E7B800", "#FC4E07"),
+#   # Custom color palette
+#   sorting = "descending",
+#   # Sort value in descending order
+#   rotate = T,
+#   add = "segments",
+#   # Add segments from y = 0 to dots
+#   add.params = list(color = "lightgray", size = 2),
+#   # Change segment color and size
+#   group = "ONTOLOGY",
+#   # Order by groups
+#   dot.size = 8,
+#   # Large dot size
+#   label = paste('', label = stringr::str_sub(go_all_gsea_dge_out$leading_edge[1:30], 6, 8)),
+#   # Add mpg values as dot labels
+#   font.label = list(
+#     color = "white",
+#     size = 9,
+#     vjust = 0.5
+#   ),
+#   # Adjust label parameters
+#   ggtheme = theme_pubr()                        # ggplot2 theme
+# ) + geom_hline(yintercept = 0,
+#                linetype = 2,
+#                color = "lightgray")
+# )
+# 
+# ggdc <- ggdotchart(
+#   data.frame(go_all_gsea_dge_out)[1:30,],
+#   x = 'Description',
+#   y = "NES",
+#   xlab = c(),
+#   color = "ONTOLOGY",
+#   # Color by groups
+#   palette = c("#00AFBB", "#E7B800", "#FC4E07"),
+#   # Custom color palette
+#   sorting = "descending",
+#   # Sort value in descending order
+#   rotate = T,
+#   add = "segments",
+#   # Add segments from y = 0 to dots
+#   add.params = list(color = "lightgray", size = 2),
+#   # Change segment color and size
+#   group = "ONTOLOGY",
+#   # Order by groups
+#   dot.size = 8,
+#   # Large dot size
+#   label = paste('', label = stringr::str_sub(go_all_gsea_dge_out$leading_edge[1:30], 6, 8)),
+#   # Add mpg values as dot labels
+#   font.label = list(
+#     color = "white",
+#     size = 9,
+#     vjust = 0.5
+#   ),
+#   # Adjust label parameters
+#   ggtheme = theme_pubr()                        # ggplot2 theme
+# ) + geom_hline(yintercept = 0,
+#                linetype = 2,
+#                color = "lightgray") +
+#     rremove('y.text') +
+#   rremove('legend.title')
+# 
+# ggdc_kegg <- ggdotchart(
+#   data.frame(kegg_gsea_dge_out)[1:30,],
+#   x = 'Description',
+#   y = "NES",
+#   xlab = c(),
+#   #color = "ONTOLOGY",
+#   # Color by groups
+#   palette = c("#00AFBB", "#E7B800", "#FC4E07"),
+#   # Custom color palette
+#   sorting = "descending",
+#   # Sort value in descending order
+#   rotate = T,
+#   add = "segments",
+#   # Add segments from y = 0 to dots
+#   add.params = list(color = "lightgray", size = 2),
+#   # Change segment color and size
+#   #group = "ONTOLOGY",
+#   # Order by groups
+#   dot.size = 8,
+#   # Large dot size
+#   label = paste('', label = stringr::str_sub(go_all_gsea_dge_out$leading_edge[1:30], 6, 8)),
+#   # Add mpg values as dot labels
+#   font.label = list(
+#     color = "white",
+#     size = 9,
+#     vjust = 0.5
+#   ),
+#   # Adjust label parameters
+#   ggtheme = theme_pubr()                        # ggplot2 theme
+# ) + geom_hline(yintercept = 0,
+#                linetype = 2,
+#                color = "lightgray") +
+#     rremove('y.text')
+
+```
+
+
+## Top 30 most significant GO and KEGG Terms respectively - Visualized Interactively
+
+
+```{r ggdc_plotly, echo = F, fig.height = 12, fig.width = 9}
+#ggplotly(ggdc)
+
+
+
+library(clusterProfiler)
+
+# Data processing for GSEA Algorithm to GO and KEGG
+dge_entrez <- bitr(
+  dge$id,
+  fromType = "ENSEMBL",
+  toType = c("ENTREZID"),
+  OrgDb = org.Hs.eg.db::org.Hs.eg.db
+) %>%
+  rename(entrez = ENTREZID,
+         id = ENSEMBL) %>%
+  full_join(dge)
+
+geneList_dge <- dge_entrez$log2FoldChange
+names(geneList_dge) <- dge_entrez$entrez
+geneList_dge <- sort(geneList_dge, decreasing = TRUE)
+geneList_dge_no_dups <-
+  geneList_dge[!duplicated(names(geneList_dge))]
+gene <- names(geneList_dge_no_dups)[abs(geneList_dge_no_dups) > 0.5]
+
+dge_entrez_ora <- dge_entrez %>%
+  filter(padj < 0.1)
+geneList_dge_ora <- dge_entrez_ora$log2FoldChange
+names(geneList_dge_ora) <- dge_entrez_ora$entrez
+geneList_dge_ora <- sort(geneList_dge_ora, decreasing = TRUE)
+geneList_dge_no_dups_ora <-
+  geneList_dge_ora[!duplicated(names(geneList_dge_ora))]
+gene_degs <-
+  names(geneList_dge_no_dups_ora)[abs(geneList_dge_no_dups_ora) > 0.5]
+
+
+the_seed = 1623250700 %% 100000 # 50700
+
+# set the same seed for the following analysis using the GSEA algorithm
+set.seed(the_seed)
+go_all_gsea_dge_out <-
+  clusterProfiler::gseGO(
+    geneList     = geneList_dge_no_dups,
+    OrgDb        = org.Hs.eg.db::org.Hs.eg.db,
+    ont          = "all",
+    pvalueCutoff = 1,
+    verbose      = TRUE,
+    seed         = TRUE,
+    minGSSize    = 15,
+    maxGSSize    = 500,
+    keyType = 'ENTREZID'
+  )
+
+set.seed(the_seed)
+kegg_gsea_dge_out <- gseKEGG(
+  geneList     = geneList_dge_no_dups,
+  organism     = 'hsa',
+  minGSSize    = 15,
+  maxGSSize    = 500,
+  pvalueCutoff = 1,
+  verbose      = TRUE,
+  seed         = TRUE
+)
+
+set.seed(the_seed)
+wiki_pathways_gsea <-
+  gseWP(geneList_dge_no_dups, organism = "Homo sapiens")
+
+
+#write.csv(data.frame(go_all_gsea_dge_out), file = '/Users/andrzejeljaszewicz/Erasmus_UP/liam_data_dge_analysis/featureCounts/exonic/exonic_GO_GSEA.csv')
+#write.csv(data.frame(kegg_gsea_dge_out), file = '/Users/andrzejeljaszewicz/Erasmus_UP/liam_data_dge_analysis/featureCounts/exonic/exonic_KEGG_GSEA.csv')
+#write.csv(data.frame(wiki_pathways_gsea), file = '/Users/andrzejeljaszewicz/Erasmus_UP/liam_data_dge_analysis/featureCounts/exonic/exonic_WIKIp_GSEA.csv')
+
+library(DOSE)
+library(ReactomePA)
+set.seed(the_seed)
+reactome_gsea <- gsePathway(
+  geneList_dge_no_dups,
+  pvalueCutoff = 1,
+  pAdjustMethod = "BH",
+  verbose = TRUE
+)
+
+set.seed(the_seed)
+disease_ontology_do <- gseDO(
+  geneList_dge_no_dups,
+  minGSSize     = 15,
+  pvalueCutoff  = 1,
+  pAdjustMethod = "BH",
+  verbose       = TRUE
+)
+
+set.seed(the_seed)
+disease_ontology_ncg <- gseNCG(
+  geneList_dge_no_dups,
+  minGSSize     = 15,
+  pvalueCutoff  = 1,
+  pAdjustMethod = "BH",
+  verbose       = TRUE
+)
+
+set.seed(the_seed)
+disease_ontology_dgn <- gseDGN(
+  geneList_dge_no_dups,
+  minGSSize     = 15,
+  pvalueCutoff  = 1,
+  pAdjustMethod = "BH",
+  verbose       = TRUE
+)
+
+
+
+
+
+
+
+
+
+
+library(ggpubr)
+library(plotly)
+
+# (ggdc <- ggdotchart(
+#   data.frame(go_all_gsea_dge_out)[1:30,],
+#   x = 'Description',
+#   y = "NES",
+#   xlab = c(),
+#   color = "ONTOLOGY",
+#   # Color by groups
+#   palette = c("#00AFBB", "#E7B800", "#FC4E07"),
+#   # Custom color palette
+#   sorting = "descending",
+#   # Sort value in descending order
+#   rotate = T,
+#   add = "segments",
+#   # Add segments from y = 0 to dots
+#   add.params = list(color = "lightgray", size = 2),
+#   # Change segment color and size
+#   group = "ONTOLOGY",
+#   # Order by groups
+#   dot.size = 8,
+#   # Large dot size
+#   label = paste('', label = stringr::str_sub(go_all_gsea_dge_out$leading_edge[1:30], 6, 8)),
+#   # Add mpg values as dot labels
+#   font.label = list(
+#     color = "white",
+#     size = 9,
+#     vjust = 0.5
+#   ),
+#   # Adjust label parameters
+#   ggtheme = theme_pubr()                        # ggplot2 theme
+# ) + geom_hline(yintercept = 0,
+#                linetype = 2,
+#                color = "lightgray")
+# )
+
+ggdc <- ggdotchart(
+  data.frame(go_all_gsea_dge_out)[1:30,],
+  x = 'Description',
+  y = "NES",
+  xlab = c(),
+  color = "ONTOLOGY",
+  # Color by groups
+  palette = c("#00AFBB", "#E7B800", "#FC4E07"),
+  # Custom color palette
+  sorting = "descending",
+  # Sort value in descending order
+  rotate = T,
+  add = "segments",
+  # Add segments from y = 0 to dots
+  add.params = list(color = "lightgray", size = 2),
+  # Change segment color and size
+  group = "ONTOLOGY",
+  # Order by groups
+  dot.size = 8,
+  # Large dot size
+  label = paste('', label = stringr::str_sub(go_all_gsea_dge_out$leading_edge[1:30], 6, 8)),
+  # Add mpg values as dot labels
+  font.label = list(
+    color = "white",
+    size = 9,
+    vjust = 0.5
+  ),
+  # Adjust label parameters
+  ggtheme = theme_pubr()                        # ggplot2 theme
+) + geom_hline(yintercept = 0,
+               linetype = 2,
+               color = "lightgray") +
+    rremove('y.text') +
+  rremove('legend.title')
+
+ggdc_kegg <- ggdotchart(
+  data.frame(kegg_gsea_dge_out)[1:30,],
+  x = 'Description',
+  y = "NES",
+  xlab = c(),
+  #color = "ONTOLOGY",
+  # Color by groups
+  palette = c("#00AFBB", "#E7B800", "#FC4E07"),
+  # Custom color palette
+  sorting = "descending",
+  # Sort value in descending order
+  rotate = T,
+  add = "segments",
+  # Add segments from y = 0 to dots
+  add.params = list(color = "lightgray", size = 2),
+  # Change segment color and size
+  #group = "ONTOLOGY",
+  # Order by groups
+  dot.size = 8,
+  # Large dot size
+  label = paste('', label = stringr::str_sub(go_all_gsea_dge_out$leading_edge[1:30], 6, 8)),
+  # Add mpg values as dot labels
+  font.label = list(
+    color = "white",
+    size = 9,
+    vjust = 0.5
+  ),
+  # Adjust label parameters
+  ggtheme = theme_pubr()                        # ggplot2 theme
+) + geom_hline(yintercept = 0,
+               linetype = 2,
+               color = "lightgray") +
+    rremove('y.text')
+
+
+p2<- subplot(ggdc, ggdc_kegg, margin = .075,titleY = TRUE, titleX=TRUE) 
+p2
+
+```
+## Top 30 most significant GO Terms
+```{r print_GO, echo=F}
+knitr::kable((data.frame(go_all_gsea_dge_out))[1:30,2:10], format="markdown")
+```
+## Top 30 most significant KEGG Pathways
+```{r print_KEGG, echo=F}
+knitr::kable((data.frame(kegg_gsea_dge_out))[1:30,2:10], format="markdown")
+```
+## Top 30 most significant WIKI Pathways
+```{r print_WIKIp, echo=F}
+knitr::kable((data.frame(wiki_pathways_gsea))[1:nrow(data.frame(wiki_pathways_gsea)),2:10], format="markdown")
+```
+## Top 30 most significant Reactome Pathways
+```{r print_reactome, echo=F}
+knitr::kable((data.frame(reactome_gsea))[1:30,2:10], format="markdown")
+```
+## Top 30 most significant Disease Ontology - DO
+```{r print_do_do, echo=F}
+knitr::kable((data.frame(disease_ontology_do))[1:30,2:10], format="markdown")
+```
+## Top 30 most significant Disease Ontology - NCG
+```{r print_do_cng, echo=F}
+knitr::kable((data.frame(disease_ontology_ncg))[1:30,2:10], format="markdown")
+```
+## Top 30 most significant Disease Ontology - DGN
+```{r print_do_dgn, echo=F}
+knitr::kable((data.frame(disease_ontology_dgn))[1:30,2:10], format="markdown")
+```
+## Table of DEGs
+```{r print_degs, echo=F}
+degs_hgnc2 <-
+  biomaRt::getBM(
+    attributes = c('ensembl_gene_id', 'external_gene_name'),
+    filters = 'ensembl_gene_id',
+    values =  degs$id,
+    mart = biomaRt::useDataset(
+      "hsapiens_gene_ensembl",
+      mart = biomaRt::useMart("ensembl", host = "asia.ensembl.org")
+    )
+  ) %>%
+  dplyr::rename('id' = 'ensembl_gene_id',
+         'hgnc' = 'external_gene_name') %>%
+  full_join(degs)
+
+knitr::kable(degs_hgnc2, format="markdown")
+n_degs <- nrow(degs_hgnc2)
+#knitr::kable(degs, format="markdown")
+#n_degs <- nrow(degs)
+```
+## Number of DEGs: `r n_degs`
+
+# COL + MMP + TIMP
+
+```{r col, echo = F, fig.width=10, fig.height=9}
+
+dge_hgnc <-
+  biomaRt::getBM(
+    attributes = c('ensembl_gene_id', 'external_gene_name'),
+    filters = 'ensembl_gene_id',
+    values =  dge$id,
+    mart = biomaRt::useDataset(
+      "hsapiens_gene_ensembl",
+      mart = biomaRt::useMart("ensembl", host = "asia.ensembl.org")
+    )
+  ) %>%
+  dplyr::rename('id' = 'ensembl_gene_id',
+         'hgnc' = 'external_gene_name') %>%
+  full_join(dge)
+
+colmmptimp <- readxl::read_excel('col_mmp_timp.xlsx', sheet = 'all')
+
+aim <- dge_hgnc %>% 
+  filter(toupper(hgnc) %in% toupper(colmmptimp$hgnc))
+
+knitr::kable(aim, format="markdown")
+
+
+keyvals <-
+  ifelse(aim$id %in% c(""),
+         'red',
+         ifelse((
+           aim$log2FoldChange > 0.5 |
+             aim$log2FoldChange < -0.5
+         ) & aim$padj < 0.1,
+         'orange',
+         ifelse(aim$padj > 0.1, '#143D59', '#143D59')
+         ))
+
+keyvals[is.na(keyvals)] <- '#143D59'
+#names(keyvals)[keyvals == 'red'] <- 'Commonly Regulated'
+names(keyvals)[keyvals == '#143D59'] <-
+  'Not Statistically Significant'
+names(keyvals)[keyvals == 'orange'] <- 'Log2FC & padj'
+
+v1 <- EnhancedVolcano::EnhancedVolcano(
+  aim,
+  lab = aim$hgnc,
+  x = 'log2FoldChange',
+  y = 'padj',
+  title = 'Asthma vs Non-Asthma',
+  pCutoff = 0.1,
+  FCcutoff = 0.5,
+  pointSize = 3.5,
+  labSize = 4.5,
+  colCustom = keyvals,
+  #col=c('#143D59', '#143D59', '#143D59', 'orange'),
+  labCol = 'black',
+  labFace = 'bold',
+  boxedLabels = T,
+  colAlpha = 3.5 / 5,
+  legendPosition = 'top',
+  legendLabSize = 18,
+  legendIconSize = 5.0,
+  drawConnectors = T,
+  widthConnectors = 1.5,
+  colConnectors = 'black',
+  gridlines.major = T,
+  gridlines.minor = FALSE,
+  border = 'full',
+  borderWidth = 1,
+  borderColour = 'black',
+  #xlim = c(-4,4),
+  #ylim = c(0,11)
+)
+
+v1
+
+```
