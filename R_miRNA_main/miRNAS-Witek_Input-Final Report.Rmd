@@ -1,0 +1,700 @@
+---
+title: "miRNAs - Witek Input"
+author: "Adrian Janucik"
+date: "9/2/2021"
+output: html_document
+---
+
+```{r Setup, include=FALSE}
+# Before deploying remember to add BiocManager to library sources
+suppressPackageStartupMessages(library(BiocManager)) 
+
+options(repos = BiocManager::repositories())
+
+# Allow for overlaps on plots
+options(ggrepel.max.overlaps = Inf)
+
+# Dependencies 
+suppressPackageStartupMessages(library(tidyverse))
+suppressPackageStartupMessages(library(plotly))
+suppressPackageStartupMessages(library(ComplexHeatmap))
+#suppressPackageStartupMessages(library(InteractiveComplexHeatmap)) # not used due to hosting
+suppressPackageStartupMessages(library(dendextend))
+suppressPackageStartupMessages(library(heatmaply))
+suppressPackageStartupMessages(library(RColorBrewer))
+suppressPackageStartupMessages(library(hrbrthemes))
+suppressPackageStartupMessages(library(ggthemes))
+suppressPackageStartupMessages(library(ggplot2))
+
+# Set global options
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE,
+  warning = FALSE
+)
+
+#\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\#
+#\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\#
+
+normalized_matrix_file_name <- 'miRNA_Witek_normalised_counts.csv'
+
+de_results_file_name <- 'miRNA_Witek_de_results.csv'
+
+# Read in DESeq2 normalized count matrix (median of ratios)
+normalized_counts <-
+  read_csv(normalized_matrix_file_name,
+           show_col_types = FALSE) %>%
+  column_to_rownames(var = 'id')
+
+# Read in DE results
+dge <- read_csv(de_results_file_name,
+                show_col_types = FALSE)
+
+meta <- data.frame(samples = colnames(normalized_counts),
+                     condition = factor(rep(1:2, each = 100), levels = c(1,2)))
+
+#\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\#
+#\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\#
+
+```
+
+## Quality Control And Differentiall Gene Expression Results
+
+#### This Is A Report Of Quality Control And Differentail Gene Expression Analysis.
+
+#### Differential Gene Expression Approach Used: DESeq2
+
+#### Cutoffs To Establish Differentially Regulated Genes: |Log2FC| > 1 & padj < 0.05
+
+## PCA Plots
+
+```{r Load, echo=FALSE}
+
+# Setup -------------------------------------------------------------------
+
+# Create variables from meta
+Condition <- meta$condition
+Sample <- meta$samples
+
+```
+
+```{r calculations_pca2d, echo=FALSE}
+# PCA on DESeq2 normalized counts -----------------------------------------
+# Perform PCA focusing only on first two dimensions for 2D plot
+normalized_pca_2d <- normalized_counts %>%
+  t() %>%
+  prcomp(rank. = 2)
+
+# Call summary on the PCA to acquire explained variance
+normalized_pca_2d_sum <-
+  summary(normalized_pca_2d)
+
+# Create label for PCA showing % of explained variance
+normalized_pca_2d_sum_total <-
+  sum(normalized_pca_2d_sum$importance[2, 1:2]) * 100
+
+```
+
+##### 2D PCA on DESeq2's Normalized Counts
+
+##### Total Explained Variance = `r normalized_pca_2d_sum_total`%
+
+```{r plot_normalized_pca2d_all_i, echo=FALSE, fig.height=6, fig.width=9.5}
+
+# Create PCA plot
+normalized_pca2d_plot_all <- ggplot(data.frame(normalized_pca_2d$x), 
+                                    aes(PC1, 
+                                        PC2, 
+                                        color = Condition, 
+                                        label = Sample)) +
+  geom_jitter(size = 3) +
+  theme_hc()
+
+# Convert PCA plot to be interactive 
+(normalized_pca2d_plot_all_i <- normalized_pca2d_plot_all %>% 
+    ggplotly() %>% 
+    layout(margin=list(t = 75)))
+
+```
+
+```{r calculations_pca3d, echo = FALSE}
+# Perform PCA focusing only on first two dimensions for 3D plot
+normalized_pca_3d <- normalized_counts %>%
+  t() %>%
+  prcomp(rank. = 3)
+
+# Call summary on the PCA to acquire explained variance
+normalized_pca_3d_sum <-
+  summary(normalized_pca_3d)
+
+# Create label for PCA showing % of explained variance
+normalized_pca_3d_sum_total <-
+  sum(normalized_pca_3d_sum$importance[2, 1:3]) * 100
+
+```
+
+##### 3D PCA on DESeq2's Normalized Counts
+
+##### Total Explained Variance = `r normalized_pca_3d_sum_total`%
+
+```{r plot_normalized_pca3d_all_i, echo=FALSE, fig.height=6, fig.width=9.5}
+(
+  normalized_pca3d_plot_all_i <-
+    plot_ly(
+      data.frame(normalized_pca_3d$x),
+      text = ~ rownames(normalized_pca_3d$x),
+      x = ~ PC1,
+      y = ~ PC2,
+      z = ~ PC3,
+      color = ~ Condition,
+      colors = c('#BF382A', '#0C4B8E')
+    ) %>%
+    add_markers() %>%
+    layout(scene = list(
+      xaxis = list(title = paste(
+        "PC1 -",
+        round(normalized_pca_3d_sum$importance[2, 1], 3)
+      )),
+      yaxis = list(title = paste(
+        "PC2 -",
+        round(normalized_pca_3d_sum$importance[2, 2], 3)
+      )),
+      zaxis = list(title = paste(
+        "PC3 -",
+        round(normalized_pca_3d_sum$importance[2, 3], 3)
+      ))
+    ))
+)
+```
+
+```{r calculations_pca2d_degs, echo = F}
+# PCA on DESeq2 normalized counts - ONLY DEGs -----------------------------
+# https://plotly.com/r/3d-scatter-plots/
+# Filter DE results for DEGs
+degs <- dge %>% 
+  filter(padj < 0.05) %>% 
+  filter(log2FoldChange > 1 | log2FoldChange < -1)
+
+# Filter normalized matrix for DEGs
+normalized_counts_degs <- normalized_counts[rownames(normalized_counts) %in% degs$id,]
+
+# Perform 2D PCA using only DE genes on a 
+normalized_pca_2d_degs <- normalized_counts_degs %>%
+  t() %>%
+  prcomp(rank. = 2)
+
+# Call summary on the PCA to acquire explained variance
+normalized_pca_2d_degs_sum <- summary(normalized_pca_2d_degs)
+
+# Create label for PCA showing % of explained variance
+tot_explained_variance_ratio_2d_degs <- sum(normalized_pca_2d_degs_sum$importance[2,1:2]) * 100
+
+# Create 2D PCA plot
+normalized_pca2d_plot_degs <- ggplot(data.frame(normalized_pca_2d_degs$x), 
+                                     aes(PC1, 
+                                         PC2, 
+                                         color = Condition, 
+                                         label = Sample)) +
+  geom_jitter(size = 3) +
+  theme_hc()
+
+# Convert 2D PCA plot into interactive using plotly
+normalized_pca2d_plot_degs_i <- normalized_pca2d_plot_degs %>% 
+    ggplotly() %>% 
+    layout(margin=list(t = 75))
+
+```
+
+##### 2D PCA on DESeq2's Normalized Counts
+
+##### Total Explained Variance = `r tot_explained_variance_ratio_2d_degs`% 
+
+```{r pca2d_2, echo = F, fig.height = 7, fig.width=9}
+normalized_pca2d_plot_degs_i
+```
+
+```{r calculations_pca3d_degs, echo = FALSE}
+# Perform PCA focusing only on first three dimensions
+normalized_pca_3d_degs <- normalized_counts[rownames(normalized_counts) %in% degs$id,] %>%
+  t() %>%
+  prcomp(rank. = 3)
+
+# Call summary on the PCA to acquire explained variance
+normalized_pca_3d_degs_sum <-
+  summary(normalized_pca_3d_degs)
+
+# Create label for PCA showing % of explained variance
+tot_explained_variance_ratio_3d_degs <-
+  sum(normalized_pca_3d_degs_sum$importance[2, 1:3]) * 100
+
+```
+
+##### 3D PCA on DESeq2's Normalized Counts
+
+##### Total Explained Variance = `r tot_explained_variance_ratio_3d_degs`%
+
+```{r plot_normalized_pca3d_plot_degs, echo = FALSE, fig.height = 7, fig.width=9}
+(normalized_pca3d_plot_degs <-
+   plot_ly(
+     data.frame(normalized_pca_3d_degs$x),
+     text = ~rownames(normalized_pca_3d_degs$x),
+     x = ~ PC1,
+     y = ~ PC2,
+     z = ~ PC3,
+     color = ~ Condition,
+     colors = c('#BF382A', '#0C4B8E')
+   ) %>%
+   add_markers() %>%
+   layout(scene = list(
+     xaxis = list(title = paste("PC1 -", round(normalized_pca_3d_degs_sum$importance[2, 1], 3))),
+     yaxis = list(title = paste("PC2 -", round(normalized_pca_3d_degs_sum$importance[2, 2], 3))),
+     zaxis = list(title = paste("PC3 -", round(normalized_pca_3d_degs_sum$importance[2, 3], 3)))
+   )))
+
+# Establish the best height and width of dendrograms depending on the number of samples
+
+dendrograms_height = ncol(normalized_counts) * 0.25
+#dendrograms_width = ncol(normalized_counts) * 0.31
+
+```
+
+## Dendrograms representing sample clustering
+
+##### Dendrogram on DESeq2's Normalized Counts
+
+```{r dendrogram_all, echo = FALSE, fig.height = dendrograms_height, fig.width = 9}
+# Dendrogram on DESeq2 normalized counts  ---------------------------------
+# Create distance matrix
+normalized_counts_all_d <- dist(t(normalized_counts))
+normalized_counts_all_d_h <- hclust(normalized_counts_all_d, method = "complete")
+levelsCondition <- rev(levels(Condition))
+
+dend_all <- as.dendrogram(normalized_counts_all_d_h)
+
+# HERE THE COLORS ARE REVERSED IN IN 'color_branches' AND 'labels_colors' (PROBABLY AS THE CONDITION IS NUMERIC AND NOT CHARACTER)
+
+# Color the branches based on the clusters:
+dend_all_c <- color_branches(dend_all, k = 2, col = c('#0C4B8E','#BF382A'))#, groupLabels = levelsCondition)
+
+# Manually match the labels, as much as possible, to the real classification of the flowers:
+labels_colors(dend_all_c) <-
+  c('#0C4B8E', '#BF382A')[sort_levels_values(as.numeric(Condition)[order.dendrogram(dend_all_c)])]
+
+# We shall add the flower type to the labels:
+labels(dend_all_c) <-
+  paste(as.character(Condition)[order.dendrogram(dend_all_c)],
+        "(", labels(dend_all_c), ")",
+        sep = "")
+
+# We hang the dendrogram a bit:
+dend_all_c_h <- hang.dendrogram(dend_all_c, hang_height = 0.1)
+
+# reduce the size of the labels:
+dend_all_c_h_s <- set(dend_all_c_h, "labels_cex", 0.6)
+
+# And plot:
+par(mar = c(2, 2, 2, 14) + 0.1, xpd = NA)
+
+plot(dend_all_c_h_s,
+     horiz =  TRUE,
+     nodePar = list(cex = .007))
+
+legend("topleft",
+       legend = levelsCondition,
+       fill = c('#BF382A', '#0C4B8E'))
+
+colorCondition_all <-
+  ifelse(as.character(Condition) == '2', '#BF382A', '#0C4B8E')
+
+colored_bars(
+  colors = colorCondition_all,
+  dend = dend_all_c_h_s,
+  rowLabels = "",
+  add = TRUE,
+  horiz = TRUE
+)
+```
+
+#### Dendrogram on DESeq2 normalized counts with only DEGs
+
+```{r dendrogram_degs, echo = FALSE, fig.height = dendrograms_height, fig.width = 9}
+# Dendrogram on DESeq2 normalized counts | DEGs only ---------------------
+normalized_counts_degs <- normalized_counts[rownames(normalized_counts) %in% degs$id,]
+
+# Create distance matrix
+normalized_counts_degs_d <- dist(t(normalized_counts_degs))
+normalized_counts_degs_d_h <- hclust(normalized_counts_degs_d, method = "complete")
+levelsCondition <- rev(levels(Condition))
+
+dend_degs <- as.dendrogram(normalized_counts_degs_d_h)
+
+# Color the branches based on the clusters:
+dend_degs_c <- color_branches(dend_degs, k = 2, col = c('#BF382A', '#0C4B8E'))#, groupLabels = levelsCondition)
+
+# Manually match the labels, as much as possible, to the real classification of the flowers:
+labels_colors(dend_degs_c) <-
+  c('#BF382A', '#0C4B8E')[sort_levels_values(as.numeric(Condition)[order.dendrogram(dend_degs_c)])]
+
+# We shall add the flower type to the labels:
+labels(dend_degs_c) <-
+  paste(as.character(Condition)[order.dendrogram(dend_degs_c)],
+        "(", labels(dend_degs_c), ")",
+        sep = "")
+
+# We hang the dendrogram a bit:
+dend_degs_c_h <- hang.dendrogram(dend_degs_c, hang_height = 0.1)
+
+# reduce the size of the labels:
+dend_degs_c_h_s <- set(dend_degs_c_h, "labels_cex", 0.6)
+
+# And plot:
+par(mar = c(2, 2, 2, 14) + 0.1, xpd = NA)
+
+plot(dend_degs_c_h_s,
+     horiz =  TRUE,
+     nodePar = list(cex = .007))
+
+legend("topleft",
+       legend = levelsCondition,
+       fill = c('#BF382A', '#0C4B8E'))
+
+colorCondition_degs <-
+  ifelse(as.character(Condition) == '2', '#BF382A', '#0C4B8E')
+
+colored_bars(
+  colors = colorCondition_degs,
+  dend = dend_degs_c_h_s,
+  rowLabels = "",
+  add = TRUE,
+  horiz = TRUE
+)
+
+```
+
+## Correlation between samples performed on Euclidean distance with the use of DE genes
+
+```{r calculations_heatmap_distance, echo = FALSE}
+# Heatmap distance --------------------------------------------------------
+# Heatmaply's gradient function is broken hence it will always use max and min matrix values as limits | ComplexHeatmap shiny app is better but as its an app markdown needs to be hosted in order to work
+gradient_col <- ggplot2::scale_fill_gradient2(
+  low = "blue", high = "red", 
+  midpoint = 0, limits = c(-1, 1)
+)
+
+# Side annotations
+side_annot <- meta$condition %>% 
+  sort(decreasing = TRUE)
+
+side_annot_top <- meta$condition %>% 
+  sort(decreasing = FALSE)
+
+# Input matrix
+normalized_counts_d_r <- dist(t(normalized_counts),
+                              diag = TRUE,
+                              upper = TRUE) %>% 
+  as.matrix() %>% 
+  cor()
+
+# Colnames and rownames pasted with its condition
+colnames(normalized_counts_d_r) <- paste(meta$condition, meta$samples, sep = "-")
+rownames(normalized_counts_d_r) <- colnames(normalized_counts_d_r)
+sorted_normalized_counts_d_r <- normalized_counts_d_r[order(rownames(normalized_counts_d_r)), order(colnames(normalized_counts_d_r), decreasing = TRUE)]
+
+# Relative height and width to the number of samples
+normalized_counts_d_r_h = nrow(sorted_normalized_counts_d_r) * 0.25
+normalized_counts_d_r_w = ncol(sorted_normalized_counts_d_r) * 0.35
+```
+
+```{r plot_heatmap_distance, echo = F, fig.height = normalized_counts_d_r_h, fig.width = normalized_counts_d_r_w}
+
+# Construct the heatmap
+normalized_counts_d_r_heatmap <- heatmaply(
+  sorted_normalized_counts_d_r,
+  scale_fill_gradient_fun = gradient_col,
+  col_side_colors = data.frame("Condition" = side_annot_top),
+  row_side_colors = data.frame("Condition" = side_annot),
+  limits = c(-1,1),
+  Rowv = FALSE,
+  Colv = FALSE,
+  showticklabels = TRUE,
+  row_side_palette = colorRampPalette(c('#BF382A', '#0C4B8E'), bias=1),
+  col_side_palette = colorRampPalette(c('#BF382A', '#0C4B8E'), bias=1),
+  key.title = 'corr',
+  colorbar_len = 0.01,
+  side_color_colorbar_len = 0.01,
+  subplot_heights = c(0.1,0.9),
+  subplot_widths = c(0.9,0.1)) 
+
+# Remove the duplicated labels caused by two sided annotations and remove the label
+s <- subplot(normalized_counts_d_r_heatmap, margin = .01, titleY = TRUE) %>% 
+  config(displayModeBar = FALSE)
+s$x$data[[1]]$showlegend <- FALSE
+s$x$data[[11]]$showlegend <- FALSE
+s$x$layout$annotations[[2]]$text <- ''
+s$x$layout$annotations[[2]]$y <- 0.8
+s$x$layout$annotations[[2]]$x <- 1.026
+
+s
+
+```
+
+## Volcano Plots
+
+```{r volcanos, echo = FALSE, fig.height = 13, fig.width=18}
+# Volcano -----------------------------------------------------------------
+# Set color and labels according to Log2FC and padj
+keyvals <-
+  ifelse(dge$id %in% c(""),
+         'red',
+         ifelse((
+           dge$log2FoldChange > 0.5 |
+             dge$log2FoldChange < -0.5
+         ) & dge$padj < 0.1,
+         'orange',
+         ifelse(dge$padj > 0.1, '#143D59', '#143D59')
+         ))
+
+keyvals[is.na(keyvals)] <- '#143D59'
+#names(keyvals)[keyvals == 'red'] <- 'Commonly Regulated'
+names(keyvals)[keyvals == '#143D59'] <-
+  'Not Statistically Significant'
+names(keyvals)[keyvals == 'orange'] <- 'Log2FC & padj'
+
+# Construct volcano with labels
+
+v1 <- EnhancedVolcano::EnhancedVolcano(
+  dge,
+  lab = dge$id,
+  x = 'log2FoldChange',
+  y = 'padj',
+  title = 'Asthma vs Non-Asthma',
+  pCutoff = 0.1,
+  FCcutoff = 0.5,
+  pointSize = 3.5,
+  labSize = 4.5,
+  colCustom = keyvals,
+  #col=c('#143D59', '#143D59', '#143D59', 'orange'),
+  labCol = 'black',
+  labFace = 'bold',
+  boxedLabels = T,
+  colAlpha = 3.5 / 5,
+  legendPosition = 'top',
+  legendLabSize = 18,
+  legendIconSize = 5.0,
+  drawConnectors = T,
+  widthConnectors = 1.5,
+  colConnectors = 'black',
+  gridlines.major = T,
+  gridlines.minor = FALSE,
+  border = 'full',
+  borderWidth = 1,
+  borderColour = 'black',
+  #xlim = c(-4,4),
+  #ylim = c(0,11)
+)
+
+# Construct volcano without labels
+v2 <- EnhancedVolcano::EnhancedVolcano(
+  dge,
+  lab = dge$id,
+  x = 'log2FoldChange',
+  y = 'padj',
+  title = 'Asthma vs Non-Asthma',
+  pCutoff = 0.1,
+  FCcutoff = 0.5,
+  pointSize = 3.5,
+  labSize = 4.5,
+  colCustom = keyvals,
+  #col=c('#143D59', '#143D59', '#143D59', 'orange'),
+  labCol = 'black',
+  labFace = 'bold',
+  boxedLabels = T,
+  colAlpha = 3.5 / 5,
+  legendPosition = 'top',
+  legendLabSize = 18,
+  legendIconSize = 5.0,
+  drawConnectors = T,
+  widthConnectors = 1.5,
+  colConnectors = 'black',
+  gridlines.major = T,
+  gridlines.minor = FALSE,
+  border = 'full',
+  borderWidth = 1,
+  borderColour = 'black',
+  #xlim = c(-4,4),
+  #ylim = c(0,11),
+  selectLab = c("")
+)
+
+# Plot both
+library(gridExtra)
+grid.arrange(v1, v2, ncol=2)
+
+```
+
+## Differentially Regulated Genes - Visualized Interactively
+
+```{r interactive_DEGs, echo = FALSE}
+# DEGs Heatmap ------------------------------------------------------------
+# Construct the matrix with log2 transfored values to get the ~normalized distribution
+
+normalized_counts_degs_heatmap <- normalized_counts_degs %>%
+  as.matrix() %>% 
+  log2()
+
+# Make the initial values equal 0 to be 0 again
+normalized_counts_degs_heatmap[is.infinite(normalized_counts_degs_heatmap)] <- 0
+
+# Save the colnames
+column_names <- colnames(normalized_counts_degs_heatmap)
+
+# Calculate the z-score for a better visualisation
+normalized_counts_degs_heatmap_z <-
+  base::apply(normalized_counts_degs_heatmap, 1, scale) %>%
+  t() 
+
+# Bring back colnames
+colnames(normalized_counts_degs_heatmap_z) <- column_names
+
+# Make NaN values 0 again
+normalized_counts_degs_heatmap_z[is.nan(normalized_counts_degs_heatmap_z)] <- 0
+
+# Paste the conditions
+colnames(normalized_counts_degs_heatmap_z) <- paste(meta$condition, meta$samples, sep = "-")
+
+# Order the heatmap according to conditions
+normalized_counts_degs_heatmap_z_o <-
+  normalized_counts_degs_heatmap_z[order(rownames(normalized_counts_degs_heatmap_z)), order(colnames(normalized_counts_degs_heatmap_z))]
+
+# Create the gradient | heatmaply limits are broken so it will only take into the account limits as max and min matrix values | ComplexHeatmap can fix it but it is a shiny app that makes the markdown needed to be hosted
+gradient_col <- ggplot2::scale_fill_gradient2(
+  low = "blue", high = "red", 
+  midpoint = 0
+)
+
+# Sort annotations
+side_annot_top <- as.character(meta$condition) %>% 
+  sort()
+
+# Fix the height and width
+degs_height = nrow(normalized_counts_degs_heatmap_z_o)*0.2
+degs_width = ncol(normalized_counts_degs_heatmap_z_o)*0.32
+```
+
+```{r heatmap_degs, echo = FALSE, fig.height = degs_height, fig.width = degs_width}
+# DEGs heatmap with ROW clustering
+(
+  heatmaply(
+    normalized_counts_degs_heatmap_z_o,
+    scale_fill_gradient_fun = gradient_col,
+    limits = c(-1.5, 1.5),
+    col_side_colors = data.frame("Condition" = side_annot_top),
+    Rowv = TRUE,
+    Colv = FALSE,
+    showticklabels = TRUE,
+    col_side_palette = colorRampPalette(c('#BF382A', '#0C4B8E'), bias = 1),
+    key.title = 'z-score',
+    colorbar_len = 0.001,
+    side_color_colorbar_len = 0.001,
+    subplot_heights = c(0.05, 0.95),
+    subplot_widths = c(0.95, 0.05)
+  )
+)
+
+degs_height_clustered = nrow(normalized_counts_degs_heatmap_z_o) * 0.25
+```
+
+```{r heatmap_degs_clustering, echo = FALSE, fig.height = degs_height_clustered, fig.width = degs_width}
+# DEGs heatmap with ROW and COL clustering
+(
+  heatmap_degs_hc <- heatmaply(
+    normalized_counts_degs_heatmap_z_o,
+    scale_fill_gradient_fun = gradient_col,
+    limits = c(-1.5, 1.5),
+    col_side_colors = data.frame("Condition" = side_annot_top),
+    Rowv = TRUE,
+    Colv = T,
+    showticklabels = TRUE,
+    col_side_palette = colorRampPalette(c('#BF382A', '#0C4B8E'), bias = 1),
+    key.title = 'z-score',
+    colorbar_len = 0.001,
+    side_color_colorbar_len = 0.001,
+    subplot_heights = c(0.05, 0.03, 0.92),
+    subplot_widths = c(0.9, 0.1)
+  )
+)
+
+```
+
+
+```{r complex_heatmap, echo= FALSE, fig.height = 6, fig.width = 10}
+
+# Commented out as its shiny app
+
+# library(shiny)
+# 
+# col_fun2 = circlize::colorRamp2(c(-1.5, 0, 1.5),
+#                                 c('mediumblue', 'white', 'red2'), space = 'sRGB')
+# ht <-
+#   ComplexHeatmap::Heatmap(
+#     deseq_normalized_counts_degs_heatmap,
+#     name = 'z-score',
+#     col = col_fun2,
+#     cluster_rows = T,
+#     cluster_columns = F,
+#     show_row_names = T,
+#     border = F,
+#     show_column_names = TRUE,
+#     column_title = 'Samples sorted',
+#     row_dend_width = unit(1, 'cm'),
+#     heatmap_legend_param = list(legend_height = unit(6, "cm")),
+#     top_annotation = colAnn_s,
+#     column_names_gp = grid::gpar(fontsize = 7),
+#     row_names_gp = grid::gpar(fontsize = 7)
+#   )
+# 
+# # or use InteractiveComplexHeatmapWidget()
+# ui = fluidPage(
+#     actionButton("show_heatmap", "Generate_heatmap"),
+#     htmlOutput("heatmap_output")
+# )
+# 
+# server = function(input, output, session) {
+#     observeEvent(input$show_heatmap, {
+#         InteractiveComplexHeatmapWidget(input, output, session, draw(ht),
+#             output_id = "heatmap_output")
+#     })
+# }
+# shiny::shinyApp(ui, server, options = list(height = 650))
+# 
+
+```
+
+## Table of DEGs
+
+```{r print_degs, echo=F}
+# Obtain HGNC symbols for DE genes
+degs_hgnc2 <-
+  biomaRt::getBM(
+    attributes = c('ensembl_gene_id', 'external_gene_name'),
+    filters = 'ensembl_gene_id',
+    values =  degs$id,
+    mart = biomaRt::useDataset(
+      "hsapiens_gene_ensembl",
+      mart = biomaRt::useMart("ensembl", host = "ensembl.org")
+    )
+  ) %>%
+  dplyr::rename('id' = 'ensembl_gene_id',
+                'hgnc' = 'external_gene_name') %>%
+  full_join(degs)
+
+knitr::kable(degs_hgnc2, format="markdown")
+n_degs <- nrow(degs_hgnc2)
+#knitr::kable(degs, format="markdown")
+#n_degs <- nrow(degs)
+```
+
+## Number of DEGs: `r n_degs`
+
+TO FUNCTIONAL HERE
+
