@@ -373,7 +373,7 @@ colored_bars(
 
 ## Correlation between samples performed on Euclidean distance with the use of DE genes
 
-```{r calculations_heatmap_distance, echo = FALSE}
+```{r calculations_heatmap_distance, error = TRUE, echo = FALSE}
 # Heatmap distance --------------------------------------------------------
 # Heatmaply's gradient function is broken hence it will always use max and min matrix values as limits | ComplexHeatmap shiny app is better but as its an app markdown needs to be hosted in order to work
 gradient_col <- ggplot2::scale_fill_gradient2(
@@ -405,7 +405,7 @@ normalized_counts_d_r_h = nrow(sorted_normalized_counts_d_r) * 0.25
 normalized_counts_d_r_w = ncol(sorted_normalized_counts_d_r) * 0.35
 ```
 
-```{r plot_heatmap_distance, echo = F, fig.height = normalized_counts_d_r_h, fig.width = normalized_counts_d_r_w}
+```{r plot_heatmap_distance, error = TRUE, echo = F, fig.height = normalized_counts_d_r_h, fig.width = normalized_counts_d_r_w}
 
 # Construct the heatmap
 normalized_counts_d_r_heatmap <- heatmaply(
@@ -581,7 +581,7 @@ degs_height = nrow(normalized_counts_degs_heatmap_z_o)*0.2
 degs_width = ncol(normalized_counts_degs_heatmap_z_o)*0.32
 ```
 
-```{r heatmap_degs, echo = FALSE, fig.height = degs_height, fig.width = degs_width}
+```{r heatmap_degs, error = TRUE, echo = FALSE, fig.height = degs_height, fig.width = degs_width}
 # DEGs heatmap with ROW clustering
 (
   heatmaply(
@@ -604,7 +604,7 @@ degs_width = ncol(normalized_counts_degs_heatmap_z_o)*0.32
 degs_height_clustered = nrow(normalized_counts_degs_heatmap_z_o) * 0.25
 ```
 
-```{r heatmap_degs_clustering, echo = FALSE, fig.height = degs_height_clustered, fig.width = degs_width}
+```{r heatmap_degs_clustering, error = TRUE, echo = FALSE, fig.height = degs_height_clustered, fig.width = degs_width}
 # DEGs heatmap with ROW and COL clustering
 (
   heatmap_degs_hc <- heatmaply(
@@ -749,6 +749,114 @@ multimir_results <- get_multimir(org     = 'hsa',
 head(multimir_results@data)
 
 ```
+
+```{r targetORA}
+
+library(clusterProfiler)
+
+# Convert ENSEMBLID to ENTREZ
+dge_entrez <- bitr(
+  dge$id,
+  fromType = "ENSEMBL",
+  toType = c("ENTREZID"),
+  OrgDb = org.Hs.eg.db::org.Hs.eg.db
+) %>%
+  rename(entrez = ENTREZID,
+         id = ENSEMBL) %>%
+  full_join(dge)
+
+# Create geneList from the whole data set for GSEA
+geneList_dge <- dge_entrez$log2FoldChange
+names(geneList_dge) <- dge_entrez$entrez
+geneList_dge <- sort(geneList_dge, decreasing = TRUE)
+geneList_dge_no_dups <-
+  geneList_dge[!duplicated(names(geneList_dge))]
+
+bp_go <- groupGO(gene     = multimir_results@data$target_entrez,
+               OrgDb    = org.Hs.eg.db::org.Hs.eg.db,
+               ont      = "BP",
+               level    = 3,
+               readable = TRUE)
+
+# mf_go <- groupGO(gene     = multimir_results@data$target_entrez,
+#                OrgDb    = org.Hs.eg.db::org.Hs.eg.db,
+#                ont      = "MF",
+#                level    = 3,
+#                readable = TRUE)
+# 
+# cc_go <- groupGO(gene     = multimir_results@data$target_entrez,
+#                OrgDb    = org.Hs.eg.db::org.Hs.eg.db,
+#                ont      = "CC",
+#                level    = 3,
+#                readable = TRUE)
+# head(bp_go)
+# 
+# head(mf_go)
+
+head(bp_go)
+
+
+# Convert ENSEMBLID to ENTREZ
+dge_entrez <- bitr(
+  dge$id,
+  fromType = "ENSEMBL",
+  toType = c("ENTREZID"),
+  OrgDb = org.Hs.eg.db::org.Hs.eg.db
+) %>%
+  rename(entrez = ENTREZID,
+         id = ENSEMBL) %>%
+  full_join(dge)
+
+# Create geneList from the whole data set for GSEA
+geneList_dge <- dge_entrez$log2FoldChange
+names(geneList_dge) <- dge_entrez$entrez
+geneList_dge <- sort(geneList_dge, decreasing = TRUE)
+geneList_dge_no_dups <-
+  geneList_dge[!duplicated(names(geneList_dge))]
+
+# After removing duplicates set seed for reproducibility
+the_seed = 1623250700 %% 100000 # 50700
+
+# set the same seed for the following analysis using the GSEA algorithm
+# GENE ONTOLOGY
+set.seed(the_seed)
+go_ora <- enrichGO(gene         = multimir_results@data$target_entrez,
+                OrgDb         = org.Hs.eg.db::org.Hs.eg.db,
+                ont           = "ALL",
+                pAdjustMethod = "BH",
+                pvalueCutoff  = 1,
+                qvalueCutoff  = 1)
+head(go_ora)
+
+set.seed(the_seed)
+go_ora_o <- enrichGO(gene         = multimir_results@data$target_entrez,
+                   universe      = names(geneList_dge_no_dups),
+                OrgDb         = org.Hs.eg.db::org.Hs.eg.db,
+                ont           = "all",
+                pAdjustMethod = "BH",
+                pvalueCutoff  = 1,
+                qvalueCutoff  = 1)
+head(go_ora_o)
+
+kegg_ora <- enrichKEGG(gene         = multimir_results@data$target_entrez,
+                 organism     = 'hsa',
+                 pvalueCutoff = 1)
+head(kegg_ora)
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
