@@ -772,6 +772,8 @@ geneList_dge <- sort(geneList_dge, decreasing = TRUE)
 geneList_dge_no_dups <-
   geneList_dge[!duplicated(names(geneList_dge))]
 
+
+# GO annotattion to level 3 branch of BP (imo not usefull)
 bp_go <- groupGO(gene     = multimir_results@data$target_entrez,
                OrgDb    = org.Hs.eg.db::org.Hs.eg.db,
                ont      = "BP",
@@ -817,8 +819,7 @@ geneList_dge_no_dups <-
 # After removing duplicates set seed for reproducibility
 the_seed = 1623250700 %% 100000 # 50700
 
-# set the same seed for the following analysis using the GSEA algorithm
-# GENE ONTOLOGY
+# ORA on to the human genome annotation
 set.seed(the_seed)
 go_ora <- enrichGO(gene         = multimir_results@data$target_entrez,
                 OrgDb         = org.Hs.eg.db::org.Hs.eg.db,
@@ -828,6 +829,8 @@ go_ora <- enrichGO(gene         = multimir_results@data$target_entrez,
                 qvalueCutoff  = 1)
 head(go_ora)
 
+# ORA in the universum of the DE dataset (no results as no target genes are present;
+# pointless aprooach)
 set.seed(the_seed)
 go_ora_o <- enrichGO(gene         = multimir_results@data$target_entrez,
                    universe      = names(geneList_dge_no_dups),
@@ -838,10 +841,19 @@ go_ora_o <- enrichGO(gene         = multimir_results@data$target_entrez,
                 qvalueCutoff  = 1)
 head(go_ora_o)
 
+# ORA on to the human genome annotation
 kegg_ora <- enrichKEGG(gene         = multimir_results@data$target_entrez,
                  organism     = 'hsa',
                  pvalueCutoff = 1)
 head(kegg_ora)
+
+
+# TODO - not really TODO but good to know:
+# 
+# 1) Devide the DE miRNAs into up- and down- regualted list and perform two ORA
+# on these lists to distinguish between the terms affected by the up- and down- 
+# regulated miRNAs and their target genes (highly expressed miRNAs in generall
+# means highly down-regulated target gene and vice versa)
 
 ```
 
